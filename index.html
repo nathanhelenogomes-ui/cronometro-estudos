@@ -39,6 +39,30 @@
       text-transform: uppercase;
     }
 
+    .subject-wrap {
+      margin: 18px auto 20px;
+      text-align: left;
+      max-width: 420px;
+    }
+
+    .subject-wrap label {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 13px;
+      font-weight: 650;
+      opacity: .72;
+    }
+
+    .subject-wrap select {
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 9px;
+      border: 1px solid rgba(55, 53, 47, .18);
+      background: #fff;
+      color: #37352f;
+      font: inherit;
+    }
+
     #display {
       margin: 12px 0 24px;
       font-variant-numeric: tabular-nums;
@@ -93,6 +117,11 @@
         border-color: rgba(255,255,255,.15);
       }
       button:hover { background: #303030; }
+      .subject-wrap select {
+        background: #252525;
+        color: #f1f1ef;
+        border-color: rgba(255,255,255,.15);
+      }
       .primary {
         background: #f1f1ef;
         color: #191919;
@@ -104,13 +133,28 @@
 <body>
   <main class="card">
     <div class="eyebrow">Tempo de estudo</div>
+    <div class="subject-wrap">
+      <label for="materia">Matéria</label>
+      <select id="materia">
+        <option value="Administração e Política Públicas">Administração e Política Públicas</option>
+        <option value="AFO">AFO</option>
+        <option value="Auditoria">Auditoria</option>
+        <option value="CASP">CASP</option>
+        <option value="Contabilidade Geral da União">Contabilidade Geral da União</option>
+        <option value="Direito Administrativo">Direito Administrativo</option>
+        <option value="Direito Constitucional">Direito Constitucional</option>
+        <option value="Discursiva">Discursiva</option>
+        <option value="Finanças">Finanças</option>
+        <option value="Português">Português</option>
+      </select>
+    </div>
+
     <div id="display">00:00:00</div>
 
     <div class="controls">
       <button id="start" class="primary">▶ Iniciar</button>
       <button id="pause" disabled>⏸ Pausar</button>
       <button id="finish" disabled>■ Finalizar</button>
-      <button id="testNotion">☁ Testar Notion (+1 min Matemática)</button>
       <button id="reset">↻ Zerar</button>
     </div>
 
@@ -124,8 +168,8 @@
       const pauseBtn = document.getElementById("pause");
       const finishBtn = document.getElementById("finish");
       const resetBtn = document.getElementById("reset");
-      const testNotionBtn = document.getElementById("testNotion");
       const status = document.getElementById("status");
+      const materiaSelect = document.getElementById("materia");
 
       const KEY_ELAPSED = "cronometroEstudos.elapsed";
       const KEY_STARTED = "cronometroEstudos.startedAt";
@@ -212,7 +256,7 @@
         render();
       });
 
-      finishBtn.addEventListener("click", () => {
+      finishBtn.addEventListener("click", async () => {
         if (running) {
           accumulated += Date.now() - startedAt;
         }
@@ -223,14 +267,17 @@
         saveState();
         stopTicker();
         render();
-        status.textContent = `Sessão finalizada: ${formatTime(accumulated)}`;
-      });
 
-      testNotionBtn.addEventListener("click", async () => {
-        const originalText = testNotionBtn.textContent;
-        testNotionBtn.disabled = true;
-        testNotionBtn.textContent = "Enviando...";
-        status.textContent = "Testando conexão com o Notion...";
+        const segundos = Math.floor(accumulated / 1000);
+        const materia = materiaSelect.value;
+
+        if (segundos <= 0) {
+          status.textContent = "A sessão precisa ter pelo menos 1 segundo.";
+          return;
+        }
+
+        finishBtn.disabled = true;
+        status.textContent = `Registrando ${formatTime(accumulated)} em ${materia}...`;
 
         try {
           const response = await fetch(
@@ -238,25 +285,35 @@
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ materia: "Matemática", segundos: 60 })
+              body: JSON.stringify({ materia, segundos })
             }
           );
 
           const data = await response.json();
 
           if (!response.ok || !data.ok) {
-            const detail = (data && data.notion && data.notion.message) || data.error || "Erro desconhecido.";
+            const detail =
+              (data && data.notion && data.notion.message) ||
+              data.error ||
+              "Erro desconhecido.";
             throw new Error(detail);
           }
 
           status.textContent =
-            "✓ Notion conectado: +00:01:00 em Matemática. Novo total decimal: " +
-            Number(data.novoTotal).toFixed(6);
+            `✓ ${formatTime(accumulated)} registrado em ${materia}.`;
+
+          // Zera a sessão somente depois de o Notion confirmar o registro.
+          accumulated = 0;
+          localStorage.removeItem(KEY_ELAPSED);
+          localStorage.removeItem(KEY_STARTED);
+          render();
+          status.textContent =
+            `✓ ${formatTime(segundos * 1000)} registrado em ${materia}.`;
         } catch (error) {
-          status.textContent = "✕ Erro: " + error.message;
-        } finally {
-          testNotionBtn.disabled = false;
-          testNotionBtn.textContent = originalText;
+          finished = false;
+          status.textContent =
+            `✕ Não foi possível registrar: ${error.message}. O tempo foi preservado para tentar novamente.`;
+          render();
         }
       });
 
