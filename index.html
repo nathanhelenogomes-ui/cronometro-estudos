@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cronômetro de Estudos</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+    }
+
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: transparent;
+      color: #37352f;
+    }
+
+    .card {
+      width: min(680px, 100%);
+      padding: 28px;
+      border: 1px solid rgba(55, 53, 47, .16);
+      border-radius: 16px;
+      background: #fff;
+      text-align: center;
+      box-shadow: 0 6px 24px rgba(0,0,0,.06);
+    }
+
+    .eyebrow {
+      font-size: 13px;
+      opacity: .62;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    #display {
+      margin: 12px 0 24px;
+      font-variant-numeric: tabular-nums;
+      font-size: clamp(44px, 11vw, 82px);
+      line-height: 1;
+      font-weight: 750;
+      letter-spacing: .02em;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 1px solid rgba(55, 53, 47, .18);
+      background: #fff;
+      color: #37352f;
+      padding: 11px 16px;
+      border-radius: 9px;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover { background: #f7f6f3; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+
+    .primary {
+      background: #37352f;
+      color: #fff;
+    }
+
+    .meta {
+      margin-top: 18px;
+      font-size: 13px;
+      opacity: .62;
+      min-height: 20px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body { color: #f1f1ef; }
+      .card {
+        background: #191919;
+        border-color: rgba(255,255,255,.14);
+      }
+      button {
+        background: #252525;
+        color: #f1f1ef;
+        border-color: rgba(255,255,255,.15);
+      }
+      button:hover { background: #303030; }
+      .primary {
+        background: #f1f1ef;
+        color: #191919;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="card">
+    <div class="eyebrow">Tempo de estudo</div>
+    <div id="display">00:00:00</div>
+
+    <div class="controls">
+      <button id="start" class="primary">▶ Iniciar</button>
+      <button id="pause" disabled>⏸ Pausar</button>
+      <button id="finish" disabled>■ Finalizar</button>
+      <button id="reset">↻ Zerar</button>
+    </div>
+
+    <div class="meta" id="status">Pronto para estudar</div>
+  </main>
+
+  <script>
+    (() => {
+      const display = document.getElementById("display");
+      const startBtn = document.getElementById("start");
+      const pauseBtn = document.getElementById("pause");
+      const finishBtn = document.getElementById("finish");
+      const resetBtn = document.getElementById("reset");
+      const status = document.getElementById("status");
+
+      const KEY_ELAPSED = "cronometroEstudos.elapsed";
+      const KEY_STARTED = "cronometroEstudos.startedAt";
+
+      let accumulated = Number(localStorage.getItem(KEY_ELAPSED) || 0);
+      let storedStart = localStorage.getItem(KEY_STARTED);
+      let startedAt = storedStart ? Number(storedStart) : null;
+      let running = startedAt !== null;
+      let finished = false;
+      let timerId = null;
+
+      const pad = n => String(n).padStart(2, "0");
+
+      function currentElapsed() {
+        return accumulated + (running ? Date.now() - startedAt : 0);
+      }
+
+      function formatTime(ms) {
+        const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+      }
+
+      function saveState() {
+        localStorage.setItem(KEY_ELAPSED, String(accumulated));
+        if (running && startedAt !== null) {
+          localStorage.setItem(KEY_STARTED, String(startedAt));
+        } else {
+          localStorage.removeItem(KEY_STARTED);
+        }
+      }
+
+      function render() {
+        display.textContent = formatTime(currentElapsed());
+
+        startBtn.disabled = running;
+        pauseBtn.disabled = !running;
+        finishBtn.disabled = !running && accumulated <= 0;
+
+        if (running) {
+          startBtn.textContent = "▶ Em andamento";
+          status.textContent = "Sessão em andamento";
+        } else if (accumulated > 0) {
+          startBtn.textContent = "▶ Retomar";
+          if (!finished) status.textContent = "Sessão pausada";
+        } else {
+          startBtn.textContent = "▶ Iniciar";
+          status.textContent = "Pronto para estudar";
+        }
+      }
+
+      function startTicker() {
+        stopTicker();
+        timerId = setInterval(render, 200);
+      }
+
+      function stopTicker() {
+        if (timerId !== null) {
+          clearInterval(timerId);
+          timerId = null;
+        }
+      }
+
+      startBtn.addEventListener("click", () => {
+        if (running) return;
+        finished = false;
+        startedAt = Date.now();
+        running = true;
+        saveState();
+        startTicker();
+        render();
+      });
+
+      pauseBtn.addEventListener("click", () => {
+        if (!running) return;
+        accumulated += Date.now() - startedAt;
+        startedAt = null;
+        running = false;
+        finished = false;
+        saveState();
+        stopTicker();
+        render();
+      });
+
+      finishBtn.addEventListener("click", () => {
+        if (running) {
+          accumulated += Date.now() - startedAt;
+        }
+
+        startedAt = null;
+        running = false;
+        finished = true;
+        saveState();
+        stopTicker();
+        render();
+        status.textContent = `Sessão finalizada: ${formatTime(accumulated)}`;
+      });
+
+      resetBtn.addEventListener("click", () => {
+        stopTicker();
+        accumulated = 0;
+        startedAt = null;
+        running = false;
+        finished = false;
+        localStorage.removeItem(KEY_ELAPSED);
+        localStorage.removeItem(KEY_STARTED);
+        render();
+      });
+
+      render();
+      if (running) startTicker();
+
+      document.addEventListener("visibilitychange", render);
+    })();
+  </script>
+</body>
+</html>
