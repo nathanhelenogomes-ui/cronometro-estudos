@@ -110,6 +110,7 @@
       <button id="start" class="primary">▶ Iniciar</button>
       <button id="pause" disabled>⏸ Pausar</button>
       <button id="finish" disabled>■ Finalizar</button>
+      <button id="testNotion">☁ Testar Notion (+1 min Matemática)</button>
       <button id="reset">↻ Zerar</button>
     </div>
 
@@ -123,6 +124,7 @@
       const pauseBtn = document.getElementById("pause");
       const finishBtn = document.getElementById("finish");
       const resetBtn = document.getElementById("reset");
+      const testNotionBtn = document.getElementById("testNotion");
       const status = document.getElementById("status");
 
       const KEY_ELAPSED = "cronometroEstudos.elapsed";
@@ -222,6 +224,40 @@
         stopTicker();
         render();
         status.textContent = `Sessão finalizada: ${formatTime(accumulated)}`;
+      });
+
+      testNotionBtn.addEventListener("click", async () => {
+        const originalText = testNotionBtn.textContent;
+        testNotionBtn.disabled = true;
+        testNotionBtn.textContent = "Enviando...";
+        status.textContent = "Testando conexão com o Notion...";
+
+        try {
+          const response = await fetch(
+            "https://cronometro-estudos-notion.nathanhelenogomes.workers.dev",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ materia: "Matemática", segundos: 60 })
+            }
+          );
+
+          const data = await response.json();
+
+          if (!response.ok || !data.ok) {
+            const detail = (data && data.notion && data.notion.message) || data.error || "Erro desconhecido.";
+            throw new Error(detail);
+          }
+
+          status.textContent =
+            "✓ Notion conectado: +00:01:00 em Matemática. Novo total decimal: " +
+            Number(data.novoTotal).toFixed(6);
+        } catch (error) {
+          status.textContent = "✕ Erro: " + error.message;
+        } finally {
+          testNotionBtn.disabled = false;
+          testNotionBtn.textContent = originalText;
+        }
       });
 
       resetBtn.addEventListener("click", () => {
