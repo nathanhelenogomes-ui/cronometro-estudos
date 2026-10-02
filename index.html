@@ -201,7 +201,7 @@
       const pad=n=>String(n).padStart(2,"0"); const elapsed=()=>acc+(running?Date.now()-started:0);
       function fmt(ms){const s=Math.floor(Math.max(0,ms)/1000);return `${pad(Math.floor(s/3600))}:${pad(Math.floor((s%3600)/60))}:${pad(s%60)}`}
       function save(){localStorage.setItem(KE,String(acc));running?localStorage.setItem(KS,String(started)):localStorage.removeItem(KS)}
-      function render(){display.textContent=fmt(elapsed());startBtn.disabled=running||sync;pauseBtn.disabled=!running||sync;finishBtn.disabled=sync||(!running&&acc<=0);startBtn.textContent=running?"▶ Em andamento":acc>0?"▶ Retomar":"▶ Iniciar"}
+      function render(){const tempo=fmt(elapsed());display.textContent=tempo;startBtn.disabled=running||sync;pauseBtn.disabled=!running||sync;finishBtn.disabled=sync||(!running&&acc<=0);startBtn.textContent=running?"▶ Em andamento":acc>0?"▶ Retomar":"▶ Iniciar";document.title=`${running?"⏱":"⏸"} ${tempo} | ${materiaValue || "Cronômetro"}`}
       function tick(){clearInterval(timer);timer=setInterval(render,200)} function stop(){clearInterval(timer);timer=null}
       async function post(body){const r=await fetch(W,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d?.notion?.message||d.error||"Erro desconhecido");return d}
 
