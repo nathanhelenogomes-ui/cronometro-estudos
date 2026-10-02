@@ -303,8 +303,17 @@
         goalMinute.disabled=running;
         goalClear.disabled=running;
 
-        // Aba: mantém o tempo real estudado.
-        document.title=`${running?"⏱":"⏸"} ${tempoEstudado} | ${materiaValue || "Cronômetro"}`;
+        // Aba do navegador: meta em contagem regressiva.
+        // Após atingir a meta, mostra o tempo excedente com +.
+        let tempoAba;
+        if(goalMs<=0){
+          tempoAba=tempoEstudado;
+        }else if(atingiuMeta){
+          tempoAba=`+${fmt(Math.abs(delta))}`;
+        }else{
+          tempoAba=fmt(delta);
+        }
+        document.title=`${running?"⏱":"⏸"} ${tempoAba} | ${materiaValue || "Cronômetro"}`;
 
         // Ding-dong apenas uma vez quando a meta é atingida.
         if(goalMs>0 && used>=goalMs && !alarmPlayed){
