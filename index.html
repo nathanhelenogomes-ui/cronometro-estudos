@@ -64,12 +64,47 @@
     }
 
     #display {
-      margin: 12px 0 24px;
+      margin: 12px 0 8px;
       font-variant-numeric: tabular-nums;
       font-size: clamp(44px, 11vw, 82px);
       line-height: 1;
       font-weight: 750;
       letter-spacing: .02em;
+    }
+
+    .goal-box {
+      max-width: 420px;
+      margin: 0 auto 22px;
+    }
+
+    .goal-label {
+      font-size: 13px;
+      font-weight: 650;
+      opacity: .72;
+      margin-bottom: 8px;
+    }
+
+    .goal-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .goal-time {
+      min-width: 112px;
+      padding: 10px 12px;
+      border: 1px solid rgba(55,53,47,.18);
+      border-radius: 9px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      background: #fff;
+    }
+
+    .goal-step {
+      padding: 9px 11px;
+      min-width: 64px;
     }
 
     .controls {
@@ -135,6 +170,11 @@
       .custom-select-button, .custom-select-menu { background:#252525; color:#f1f1ef; border-color:#444; }
       .custom-option { color:#f1f1ef; }
       .custom-option:hover, .custom-option:focus { background:#333; }
+      .goal-time {
+        background:#252525;
+        color:#f1f1ef;
+        border-color:rgba(255,255,255,.15);
+      }
       .primary {
         background: #f1f1ef;
         color: #191919;
@@ -168,6 +208,16 @@
 
     <div id="display">00:00:00</div>
 
+    <div class="goal-box">
+      <div class="goal-label">Meta de estudo</div>
+      <div class="goal-row">
+        <button id="goalHour" class="goal-step" type="button" title="Adicionar 1 hora">+1h</button>
+        <div id="goalTime" class="goal-time">01:00:00</div>
+        <button id="goalMinute" class="goal-step" type="button" title="Adicionar 5 minutos">+5min</button>
+        <button id="goalClear" class="goal-step" type="button" title="Zerar meta">↻ Meta</button>
+      </div>
+    </div>
+
     <div class="controls">
       <button id="start" class="primary">▶ Iniciar</button>
       <button id="pause" disabled>⏸ Pausar</button>
@@ -192,16 +242,56 @@
       const W="https://cronometro-estudos-notion.nathanhelenogomes.workers.dev";
       const $=id=>document.getElementById(id);
       const display=$("display"),startBtn=$("start"),pauseBtn=$("pause"),finishBtn=$("finish"),resetBtn=$("reset"),status=$("status"),questoes=$("questoes"),erros=$("erros"),saveQ=$("saveQuestions");
+      const goalTime=$("goalTime"),goalHour=$("goalHour"),goalMinute=$("goalMinute"),goalClear=$("goalClear");
       const materiaDD=$("materiaDropdown"),materiaBtn=$("materiaButton"),materiaLabel=$("materiaLabel"),materiaMenu=$("materiaMenu");
       const aulaDD=$("aulaDropdown"),aulaBtn=$("aulaButton"),aulaLabel=$("aulaLabel"),aulaMenu=$("aulaMenu");
       const materias=["Administração e Política Públicas","AFO","Auditoria","CASP","Controladoria Geral da União","Direito Administrativo","Direito Constitucional","Discursiva","Finanças","Português","Inglês","Simulados"];
       let materiaValue="Português", aulaValue="";
-      const KE="cronometroEstudos.elapsed",KS="cronometroEstudos.startedAt",KP="cronometroEstudos.pendingPause";
+      const KE="cronometroEstudos.elapsed",KS="cronometroEstudos.startedAt",KP="cronometroEstudos.pendingPause",KG="cronometroEstudos.goal";
       let acc=Number(localStorage.getItem(KE)||0), st=localStorage.getItem(KS); let started=st?Number(st):null,running=started!==null,timer=null,sync=false;
+      let goalMs=Number(localStorage.getItem(KG)||3600000);
+      let alarmPlayed=false;
+      let audioCtx=null;
       const pad=n=>String(n).padStart(2,"0"); const elapsed=()=>acc+(running?Date.now()-started:0);
       function fmt(ms){const s=Math.floor(Math.max(0,ms)/1000);return `${pad(Math.floor(s/3600))}:${pad(Math.floor((s%3600)/60))}:${pad(s%60)}`}
       function save(){localStorage.setItem(KE,String(acc));running?localStorage.setItem(KS,String(started)):localStorage.removeItem(KS)}
-      function render(){const tempo=fmt(elapsed());display.textContent=tempo;startBtn.disabled=running||sync;pauseBtn.disabled=!running||sync;finishBtn.disabled=sync||(!running&&acc<=0);startBtn.textContent=running?"▶ Em andamento":acc>0?"▶ Retomar":"▶ Iniciar";document.title=`${running?"⏱":"⏸"} ${tempo} | ${materiaValue || "Cronômetro"}`}
+      function saveGoal(){localStorage.setItem(KG,String(goalMs));goalTime.textContent=fmt(goalMs)}
+      function ensureAudio(){if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")audioCtx.resume()}
+      function tone(freq,start,duration){
+        const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.type="sine";o.frequency.value=freq;
+        g.gain.setValueAtTime(0.0001,start);
+        g.gain.exponentialRampToValueAtTime(0.18,start+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,start+duration);
+        o.connect(g);g.connect(audioCtx.destination);o.start(start);o.stop(start+duration+0.03);
+      }
+      function dingDong(){
+        ensureAudio();
+        const t=audioCtx.currentTime+0.02;
+        tone(784,t,0.42);
+        tone(523.25,t+0.48,0.65);
+      }
+      function render(){
+        const used=elapsed();
+        const remaining=Math.max(0,goalMs-used);
+        const tempo=fmt(remaining);
+        display.textContent=tempo;
+        goalTime.textContent=fmt(goalMs);
+        startBtn.disabled=running||sync||goalMs<=0;
+        pauseBtn.disabled=!running||sync;
+        finishBtn.disabled=sync||(!running&&acc<=0);
+        startBtn.textContent=running?"▶ Em andamento":acc>0?"▶ Retomar":"▶ Iniciar";
+        goalHour.disabled=running;
+        goalMinute.disabled=running;
+        goalClear.disabled=running;
+        document.title=`${running?"⏱":"⏸"} ${tempo} | ${materiaValue || "Cronômetro"}`;
+        if(goalMs>0 && used>=goalMs && !alarmPlayed){
+          alarmPlayed=true;
+          dingDong();
+          status.textContent="🔔 Meta de estudo atingida!";
+        }
+        if(used<goalMs) alarmPlayed=false;
+      }
       function tick(){clearInterval(timer);timer=setInterval(render,200)} function stop(){clearInterval(timer);timer=null}
       async function post(body){const r=await fetch(W,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d?.notion?.message||d.error||"Erro desconhecido");return d}
 
@@ -216,10 +306,13 @@
 
       async function loadAulas(){aulaValue="";aulaBtn.disabled=true;aulaLabel.textContent="Carregando aulas...";aulaMenu.innerHTML="";try{const r=await fetch(`${W}?action=aulas&materia=${encodeURIComponent(materiaValue)}`),d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error);if(!d.aulas.length){aulaLabel.textContent="Nenhuma aula encontrada";return}aulaLabel.textContent="Selecione a aula";d.aulas.forEach(x=>aulaMenu.appendChild(optionButton(x.nome,()=>{aulaValue=x.id;aulaLabel.textContent=x.nome;closeDropdown(aulaDD,aulaBtn)})));}catch(e){aulaLabel.textContent="Erro ao carregar aulas";status.textContent=`✕ ${e.message}`}finally{aulaBtn.disabled=false}}
       async function pending(){const raw=localStorage.getItem(KP);if(!raw||sync)return;const p=JSON.parse(raw);sync=true;render();try{await post({action:"pause",...p});localStorage.removeItem(KP);status.textContent=`✓ ${fmt(p.segundos*1000)} registrado em ${p.materia}.`}catch(e){status.textContent=`✕ ${e.message}. Lançamento pendente.`}finally{sync=false;render()}}
-      startBtn.onclick=async()=>{if(localStorage.getItem(KP)){await pending();if(localStorage.getItem(KP))return}started=Date.now();running=true;save();tick();render()};
+      goalHour.onclick=()=>{goalMs+=3600000;alarmPlayed=false;saveGoal();render()};
+      goalMinute.onclick=()=>{goalMs+=300000;alarmPlayed=false;saveGoal();render()};
+      goalClear.onclick=()=>{goalMs=0;alarmPlayed=false;saveGoal();render()};
+      startBtn.onclick=async()=>{if(localStorage.getItem(KP)){await pending();if(localStorage.getItem(KP))return}ensureAudio();started=Date.now();running=true;save();tick();render()};
       pauseBtn.onclick=async()=>{const now=Date.now(),ms=now-started,s=Math.floor(ms/1000);acc+=ms;started=null;running=false;save();stop();render();if(s>0){localStorage.setItem(KP,JSON.stringify({materia:materiaValue,segundos:s,eventId:crypto.randomUUID()}));await pending()}};
-      finishBtn.onclick=async()=>{if(running){await pauseBtn.onclick();if(localStorage.getItem(KP))return}acc=0;localStorage.removeItem(KE);localStorage.removeItem(KS);render();status.textContent="✓ Sessão finalizada."};
-      resetBtn.onclick=()=>{if(localStorage.getItem(KP)){status.textContent="Há lançamento pendente; não vou apagá-lo.";return}stop();acc=0;started=null;running=false;localStorage.removeItem(KE);localStorage.removeItem(KS);render()};
+      finishBtn.onclick=async()=>{if(running){await pauseBtn.onclick();if(localStorage.getItem(KP))return}acc=0;alarmPlayed=false;localStorage.removeItem(KE);localStorage.removeItem(KS);render();status.textContent="✓ Sessão finalizada."};
+      resetBtn.onclick=()=>{if(localStorage.getItem(KP)){status.textContent="Há lançamento pendente; não vou apagá-lo.";return}stop();acc=0;started=null;running=false;alarmPlayed=false;localStorage.removeItem(KE);localStorage.removeItem(KS);render()};
       saveQ.onclick=async()=>{const q=Number(questoes.value),e=Number(erros.value);if(!aulaValue)return status.textContent="Selecione uma aula.";if(!Number.isInteger(q)||q<=0)return status.textContent="Informe uma quantidade válida de questões.";if(!Number.isInteger(e)||e<0||e>q)return status.textContent="Erros deve ficar entre 0 e o total de questões.";saveQ.disabled=true;try{const d=await post({action:"saveQuestions",materia:materiaValue,aulaId:aulaValue,questoes:q,erros:e,eventId:crypto.randomUUID()});status.textContent=`✓ ${q} questões salvas. Aula: ${d.totalAula}. Matéria: ${d.totalMateria}.`}catch(x){status.textContent=`✕ ${x.message}`}finally{saveQ.disabled=false}};
       render();if(running)tick();if(localStorage.getItem(KP))pending();loadAulas();
     })();
