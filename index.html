@@ -105,6 +105,16 @@
       min-height: 20px;
     }
 
+    .custom-select { position: relative; width: 100%; }
+    .custom-select-button { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 12px; border-radius:9px; border:1px solid rgba(55,53,47,.18); background:#fff; color:#37352f; font:inherit; cursor:pointer; text-align:left; }
+    .custom-select-button:focus { outline:2px solid rgba(55,53,47,.22); outline-offset:2px; }
+    .custom-select-button:disabled { opacity:.55; cursor:not-allowed; }
+    .custom-select-arrow { font-size:12px; transition:transform .15s ease; }
+    .custom-select.open .custom-select-arrow { transform:rotate(180deg); }
+    .custom-select-menu { display:none; position:absolute; z-index:9999; left:0; right:0; top:calc(100% + 6px); max-height:250px; overflow-y:auto; padding:6px; border:1px solid rgba(55,53,47,.18); border-radius:10px; background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.14); }
+    .custom-select.open .custom-select-menu { display:block; }
+    .custom-option { width:100%; padding:9px 10px; border:0; border-radius:7px; background:transparent; color:#37352f; font:inherit; text-align:left; cursor:pointer; }
+    .custom-option:hover, .custom-option:focus { background:#f1f1ef; outline:none; }
     @media (prefers-color-scheme: dark) {
       body { color: #f1f1ef; }
       .card {
@@ -122,6 +132,9 @@
         color: #f1f1ef;
         border-color: rgba(255,255,255,.15);
       }
+      .custom-select-button, .custom-select-menu { background:#252525; color:#f1f1ef; border-color:#444; }
+      .custom-option { color:#f1f1ef; }
+      .custom-option:hover, .custom-option:focus { background:#333; }
       .primary {
         background: #f1f1ef;
         color: #191919;
@@ -135,25 +148,22 @@
     <div class="eyebrow">Tempo de estudo</div>
     <div class="subject-wrap">
       <label for="materia">Matéria</label>
-      <select id="materia">
-        <option value="Administração e Política Públicas">Administração e Política Públicas</option>
-        <option value="AFO">AFO</option>
-        <option value="Auditoria">Auditoria</option>
-        <option value="CASP">CASP</option>
-        <option value="Controladoria Geral da União">Controladoria Geral da União</option>
-        <option value="Direito Administrativo">Direito Administrativo</option>
-        <option value="Direito Constitucional">Direito Constitucional</option>
-        <option value="Discursiva">Discursiva</option>
-        <option value="Finanças">Finanças</option>
-        <option value="Português">Português</option>
-        <option value="Inglês">Inglês</option>
-        <option value="Simulados">Simulados</option>
-      </select>
+      <div class="custom-select" id="materiaDropdown">
+        <button type="button" class="custom-select-button" id="materiaButton" aria-expanded="false">
+          <span id="materiaLabel">Português</span><span class="custom-select-arrow">▼</span>
+        </button>
+        <div class="custom-select-menu" id="materiaMenu"></div>
+      </div>
     </div>
 
     <div class="subject-wrap">
       <label for="aula">Aula</label>
-      <select id="aula"><option value="">Selecione uma matéria primeiro</option></select>
+      <div class="custom-select" id="aulaDropdown">
+        <button type="button" class="custom-select-button" id="aulaButton" aria-expanded="false">
+          <span id="aulaLabel">Carregando aulas...</span><span class="custom-select-arrow">▼</span>
+        </button>
+        <div class="custom-select-menu" id="aulaMenu"></div>
+      </div>
     </div>
 
     <div id="display">00:00:00</div>
@@ -181,7 +191,11 @@
     (() => {
       const W="https://cronometro-estudos-notion.nathanhelenogomes.workers.dev";
       const $=id=>document.getElementById(id);
-      const display=$("display"),startBtn=$("start"),pauseBtn=$("pause"),finishBtn=$("finish"),resetBtn=$("reset"),status=$("status"),materia=$("materia"),aula=$("aula"),questoes=$("questoes"),erros=$("erros"),saveQ=$("saveQuestions");
+      const display=$("display"),startBtn=$("start"),pauseBtn=$("pause"),finishBtn=$("finish"),resetBtn=$("reset"),status=$("status"),questoes=$("questoes"),erros=$("erros"),saveQ=$("saveQuestions");
+      const materiaDD=$("materiaDropdown"),materiaBtn=$("materiaButton"),materiaLabel=$("materiaLabel"),materiaMenu=$("materiaMenu");
+      const aulaDD=$("aulaDropdown"),aulaBtn=$("aulaButton"),aulaLabel=$("aulaLabel"),aulaMenu=$("aulaMenu");
+      const materias=["Administração e Política Públicas","AFO","Auditoria","CASP","Controladoria Geral da União","Direito Administrativo","Direito Constitucional","Discursiva","Finanças","Português","Inglês","Simulados"];
+      let materiaValue="Português", aulaValue="";
       const KE="cronometroEstudos.elapsed",KS="cronometroEstudos.startedAt",KP="cronometroEstudos.pendingPause";
       let acc=Number(localStorage.getItem(KE)||0), st=localStorage.getItem(KS); let started=st?Number(st):null,running=started!==null,timer=null,sync=false;
       const pad=n=>String(n).padStart(2,"0"); const elapsed=()=>acc+(running?Date.now()-started:0);
@@ -190,14 +204,24 @@
       function render(){display.textContent=fmt(elapsed());startBtn.disabled=running||sync;pauseBtn.disabled=!running||sync;finishBtn.disabled=sync||(!running&&acc<=0);startBtn.textContent=running?"▶ Em andamento":acc>0?"▶ Retomar":"▶ Iniciar"}
       function tick(){clearInterval(timer);timer=setInterval(render,200)} function stop(){clearInterval(timer);timer=null}
       async function post(body){const r=await fetch(W,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d?.notion?.message||d.error||"Erro desconhecido");return d}
-      async function loadAulas(){aula.disabled=true;aula.innerHTML='<option>Carregando...</option>';try{const r=await fetch(`${W}?action=aulas&materia=${encodeURIComponent(materia.value)}`),d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error);aula.innerHTML='<option value="">Selecione a aula</option>';d.aulas.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=x.nome;aula.appendChild(o)});if(!d.aulas.length)aula.innerHTML='<option value="">Nenhuma aula encontrada</option>'}catch(e){status.textContent=`✕ ${e.message}`}finally{aula.disabled=false}}
+
+      function closeDropdown(dd,btn){dd.classList.remove("open");btn.setAttribute("aria-expanded","false")}
+      function toggleDropdown(dd,btn,other,otherBtn){closeDropdown(other,otherBtn);const open=!dd.classList.contains("open");dd.classList.toggle("open",open);btn.setAttribute("aria-expanded",String(open))}
+      function optionButton(text,onClick){const b=document.createElement("button");b.type="button";b.className="custom-option";b.textContent=text;b.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();onClick()});return b}
+      materias.forEach(m=>materiaMenu.appendChild(optionButton(m,()=>{materiaValue=m;materiaLabel.textContent=m;closeDropdown(materiaDD,materiaBtn);loadAulas()})));
+      materiaBtn.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();toggleDropdown(materiaDD,materiaBtn,aulaDD,aulaBtn)});
+      aulaBtn.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();if(!aulaBtn.disabled)toggleDropdown(aulaDD,aulaBtn,materiaDD,materiaBtn)});
+      document.addEventListener("click",()=>{closeDropdown(materiaDD,materiaBtn);closeDropdown(aulaDD,aulaBtn)});
+      materiaMenu.addEventListener("click",e=>e.stopPropagation()); aulaMenu.addEventListener("click",e=>e.stopPropagation());
+
+      async function loadAulas(){aulaValue="";aulaBtn.disabled=true;aulaLabel.textContent="Carregando aulas...";aulaMenu.innerHTML="";try{const r=await fetch(`${W}?action=aulas&materia=${encodeURIComponent(materiaValue)}`),d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error);if(!d.aulas.length){aulaLabel.textContent="Nenhuma aula encontrada";return}aulaLabel.textContent="Selecione a aula";d.aulas.forEach(x=>aulaMenu.appendChild(optionButton(x.nome,()=>{aulaValue=x.id;aulaLabel.textContent=x.nome;closeDropdown(aulaDD,aulaBtn)})));}catch(e){aulaLabel.textContent="Erro ao carregar aulas";status.textContent=`✕ ${e.message}`}finally{aulaBtn.disabled=false}}
       async function pending(){const raw=localStorage.getItem(KP);if(!raw||sync)return;const p=JSON.parse(raw);sync=true;render();try{await post({action:"pause",...p});localStorage.removeItem(KP);status.textContent=`✓ ${fmt(p.segundos*1000)} registrado em ${p.materia}.`}catch(e){status.textContent=`✕ ${e.message}. Lançamento pendente.`}finally{sync=false;render()}}
       startBtn.onclick=async()=>{if(localStorage.getItem(KP)){await pending();if(localStorage.getItem(KP))return}started=Date.now();running=true;save();tick();render()};
-      pauseBtn.onclick=async()=>{const now=Date.now(),ms=now-started,s=Math.floor(ms/1000);acc+=ms;started=null;running=false;save();stop();render();if(s>0){localStorage.setItem(KP,JSON.stringify({materia:materia.value,segundos:s,eventId:crypto.randomUUID()}));await pending()}};
+      pauseBtn.onclick=async()=>{const now=Date.now(),ms=now-started,s=Math.floor(ms/1000);acc+=ms;started=null;running=false;save();stop();render();if(s>0){localStorage.setItem(KP,JSON.stringify({materia:materiaValue,segundos:s,eventId:crypto.randomUUID()}));await pending()}};
       finishBtn.onclick=async()=>{if(running){await pauseBtn.onclick();if(localStorage.getItem(KP))return}acc=0;localStorage.removeItem(KE);localStorage.removeItem(KS);render();status.textContent="✓ Sessão finalizada."};
       resetBtn.onclick=()=>{if(localStorage.getItem(KP)){status.textContent="Há lançamento pendente; não vou apagá-lo.";return}stop();acc=0;started=null;running=false;localStorage.removeItem(KE);localStorage.removeItem(KS);render()};
-      saveQ.onclick=async()=>{const q=Number(questoes.value),e=Number(erros.value);if(!aula.value)return status.textContent="Selecione uma aula.";if(!Number.isInteger(q)||q<=0)return status.textContent="Informe uma quantidade válida de questões.";if(!Number.isInteger(e)||e<0||e>q)return status.textContent="Erros deve ficar entre 0 e o total de questões.";saveQ.disabled=true;try{const d=await post({action:"saveQuestions",materia:materia.value,aulaId:aula.value,questoes:q,erros:e,eventId:crypto.randomUUID()});status.textContent=`✓ ${q} questões salvas. Aula: ${d.totalAula}. Matéria: ${d.totalMateria}.`}catch(x){status.textContent=`✕ ${x.message}`}finally{saveQ.disabled=false}};
-      materia.onchange=loadAulas;render();if(running)tick();if(localStorage.getItem(KP))pending();loadAulas();
+      saveQ.onclick=async()=>{const q=Number(questoes.value),e=Number(erros.value);if(!aulaValue)return status.textContent="Selecione uma aula.";if(!Number.isInteger(q)||q<=0)return status.textContent="Informe uma quantidade válida de questões.";if(!Number.isInteger(e)||e<0||e>q)return status.textContent="Erros deve ficar entre 0 e o total de questões.";saveQ.disabled=true;try{const d=await post({action:"saveQuestions",materia:materiaValue,aulaId:aulaValue,questoes:q,erros:e,eventId:crypto.randomUUID()});status.textContent=`✓ ${q} questões salvas. Aula: ${d.totalAula}. Matéria: ${d.totalMateria}.`}catch(x){status.textContent=`✕ ${x.message}`}finally{saveQ.disabled=false}};
+      render();if(running)tick();if(localStorage.getItem(KP))pending();loadAulas();
     })();
   </script>
 </body>
