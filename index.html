@@ -75,6 +75,8 @@
     .goal-box {
       max-width: 420px;
       margin: 0 auto 22px;
+      transform: scale(.92);
+      transform-origin: top center;
     }
 
     .goal-label {
@@ -185,6 +187,9 @@
 
 <body>
   <main class="card">
+    <div id="goalStatus" style="text-align:center;font-size:12px;font-weight:700;letter-spacing:.08em;opacity:.68;margin-bottom:14px">
+      META RESTANTE · 01:00:00
+    </div>
     <div class="eyebrow">Tempo de estudo</div>
     <div class="subject-wrap">
       <label for="materia">Matéria</label>
@@ -242,7 +247,7 @@
       const W="https://cronometro-estudos-notion.nathanhelenogomes.workers.dev";
       const $=id=>document.getElementById(id);
       const display=$("display"),startBtn=$("start"),pauseBtn=$("pause"),finishBtn=$("finish"),resetBtn=$("reset"),status=$("status"),questoes=$("questoes"),erros=$("erros"),saveQ=$("saveQuestions");
-      const goalTime=$("goalTime"),goalHour=$("goalHour"),goalMinute=$("goalMinute"),goalClear=$("goalClear");
+      const goalTime=$("goalTime"),goalHour=$("goalHour"),goalMinute=$("goalMinute"),goalClear=$("goalClear"),goalStatus=$("goalStatus");
       const materiaDD=$("materiaDropdown"),materiaBtn=$("materiaButton"),materiaLabel=$("materiaLabel"),materiaMenu=$("materiaMenu");
       const aulaDD=$("aulaDropdown"),aulaBtn=$("aulaButton"),aulaLabel=$("aulaLabel"),aulaMenu=$("aulaMenu");
       const materias=["Administração e Política Públicas","AFO","Auditoria","CASP","Controladoria Geral da União","Direito Administrativo","Direito Constitucional","Discursiva","Finanças","Português","Inglês","Simulados"];
@@ -273,9 +278,22 @@
       }
       function render(){
         const used=elapsed();
-        const remaining=Math.max(0,goalMs-used);
-        const tempo=fmt(remaining);
-        display.textContent=tempo;
+        const delta=goalMs-used;
+        const atingiuMeta=goalMs>0 && delta<=0;
+
+        // Relógio principal: sempre mostra o tempo REAL estudado, crescente.
+        const tempoEstudado=fmt(used);
+        display.textContent=tempoEstudado;
+
+        // Meta: somente a faixa pequena no topo corre ao contrário.
+        if(goalMs<=0){
+          goalStatus.textContent="META NÃO DEFINIDA";
+        }else if(atingiuMeta){
+          goalStatus.textContent=`META EXCEDIDA · +${fmt(Math.abs(delta))}`;
+        }else{
+          goalStatus.textContent=`META RESTANTE · ${fmt(delta)}`;
+        }
+
         goalTime.textContent=fmt(goalMs);
         startBtn.disabled=running||sync||goalMs<=0;
         pauseBtn.disabled=!running||sync;
@@ -284,7 +302,11 @@
         goalHour.disabled=running;
         goalMinute.disabled=running;
         goalClear.disabled=running;
-        document.title=`${running?"⏱":"⏸"} ${tempo} | ${materiaValue || "Cronômetro"}`;
+
+        // Aba: mantém o tempo real estudado.
+        document.title=`${running?"⏱":"⏸"} ${tempoEstudado} | ${materiaValue || "Cronômetro"}`;
+
+        // Ding-dong apenas uma vez quando a meta é atingida.
         if(goalMs>0 && used>=goalMs && !alarmPlayed){
           alarmPlayed=true;
           dingDong();
