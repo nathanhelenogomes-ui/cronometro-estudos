@@ -151,6 +151,11 @@
       </select>
     </div>
 
+    <div class="subject-wrap">
+      <label for="aula">Aula</label>
+      <select id="aula"><option value="">Selecione uma matéria primeiro</option></select>
+    </div>
+
     <div id="display">00:00:00</div>
 
     <div class="controls">
@@ -160,150 +165,39 @@
       <button id="reset">↻ Zerar</button>
     </div>
 
+    <div class="subject-wrap">
+      <label for="questoes">Questões resolvidas</label>
+      <input id="questoes" type="number" min="0" step="1" placeholder="0" style="width:100%;padding:11px 12px;border-radius:9px;border:1px solid rgba(55,53,47,.18);font:inherit">
+    </div>
+    <div class="subject-wrap">
+      <label for="erros">Erros (CESPE)</label>
+      <input id="erros" type="number" min="0" step="1" placeholder="0" style="width:100%;padding:11px 12px;border-radius:9px;border:1px solid rgba(55,53,47,.18);font:inherit">
+    </div>
+    <div class="controls"><button id="saveQuestions" class="primary">✓ Salvar questões</button></div>
     <div class="meta" id="status">Pronto para estudar</div>
   </main>
 
   <script>
     (() => {
-      const WORKER_URL = "https://cronometro-estudos-notion.nathanhelenogomes.workers.dev";
-      const display = document.getElementById("display");
-      const startBtn = document.getElementById("start");
-      const pauseBtn = document.getElementById("pause");
-      const finishBtn = document.getElementById("finish");
-      const resetBtn = document.getElementById("reset");
-      const status = document.getElementById("status");
-      const materiaSelect = document.getElementById("materia");
-
-      const KEY_ELAPSED = "cronometroEstudos.elapsed";
-      const KEY_STARTED = "cronometroEstudos.startedAt";
-      const KEY_PENDING = "cronometroEstudos.pendingPause";
-
-      let accumulated = Number(localStorage.getItem(KEY_ELAPSED) || 0);
-      let storedStart = localStorage.getItem(KEY_STARTED);
-      let startedAt = storedStart ? Number(storedStart) : null;
-      let running = startedAt !== null;
-      let finished = false, timerId = null, syncing = false;
-
-      const pad = n => String(n).padStart(2, "0");
-      const currentElapsed = () => accumulated + (running ? Date.now() - startedAt : 0);
-
-      function formatTime(ms) {
-        const s = Math.floor(Math.max(0, ms) / 1000);
-        return `${pad(Math.floor(s/3600))}:${pad(Math.floor((s%3600)/60))}:${pad(s%60)}`;
-      }
-
-      function saveState() {
-        localStorage.setItem(KEY_ELAPSED, String(accumulated));
-        if (running && startedAt !== null) localStorage.setItem(KEY_STARTED, String(startedAt));
-        else localStorage.removeItem(KEY_STARTED);
-      }
-
-      function render() {
-        display.textContent = formatTime(currentElapsed());
-        startBtn.disabled = running || syncing;
-        pauseBtn.disabled = !running || syncing;
-        finishBtn.disabled = syncing || (!running && accumulated <= 0);
-        if (running) {
-          startBtn.textContent = "▶ Em andamento";
-          if (!syncing) status.textContent = "Sessão em andamento";
-        } else if (accumulated > 0) {
-          startBtn.textContent = "▶ Retomar";
-          if (!finished && !syncing) status.textContent = "Sessão pausada";
-        } else {
-          startBtn.textContent = "▶ Iniciar";
-          if (!syncing) status.textContent = "Pronto para estudar";
-        }
-      }
-
-      function startTicker() { stopTicker(); timerId = setInterval(render, 200); }
-      function stopTicker() { if (timerId !== null) { clearInterval(timerId); timerId = null; } }
-
-      async function sendPause(p) {
-        const response = await fetch(WORKER_URL, {
-          method: "POST",
-          headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({action:"pause", materia:p.materia, segundos:p.segundos, eventId:p.eventId})
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error((data && data.notion && data.notion.message) || data.error || "Erro desconhecido.");
-        }
-      }
-
-      async function retryPending() {
-        const raw = localStorage.getItem(KEY_PENDING);
-        if (!raw || syncing) return;
-        const p = JSON.parse(raw);
-        syncing = true; render();
-        status.textContent = `Registrando ${formatTime(p.segundos*1000)} em ${p.materia}...`;
-        try {
-          await sendPause(p);
-          localStorage.removeItem(KEY_PENDING);
-          status.textContent = `✓ ${formatTime(p.segundos*1000)} registrado em Horas Dia e Horas Semana (${p.materia}).`;
-        } catch (e) {
-          status.textContent = `✕ Falha ao registrar: ${e.message}. O lançamento ficou pendente.`;
-        } finally { syncing = false; render(); }
-      }
-
-      startBtn.addEventListener("click", async () => {
-        if (running || syncing) return;
-        if (localStorage.getItem(KEY_PENDING)) {
-          await retryPending();
-          if (localStorage.getItem(KEY_PENDING)) return;
-        }
-        finished = false; startedAt = Date.now(); running = true;
-        saveState(); startTicker(); render();
-      });
-
-      pauseBtn.addEventListener("click", async () => {
-        if (!running || syncing) return;
-        const now = Date.now(), intervalo = Math.max(0, now-startedAt);
-        const segundos = Math.floor(intervalo/1000), materia = materiaSelect.value;
-        accumulated += intervalo; startedAt = null; running = false; finished = false;
-        saveState(); stopTicker(); render();
-        if (segundos <= 0) return;
-        localStorage.setItem(KEY_PENDING, JSON.stringify({
-          materia, segundos,
-          eventId: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
-        }));
-        await retryPending();
-      });
-
-      finishBtn.addEventListener("click", async () => {
-        if (running) {
-          const now = Date.now(), intervalo = Math.max(0, now-startedAt);
-          const segundos = Math.floor(intervalo/1000), materia = materiaSelect.value;
-          accumulated += intervalo; startedAt = null; running = false; saveState(); stopTicker();
-          if (segundos > 0) {
-            localStorage.setItem(KEY_PENDING, JSON.stringify({
-              materia, segundos,
-              eventId: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
-            }));
-            await retryPending();
-            if (localStorage.getItem(KEY_PENDING)) return;
-          }
-        } else if (localStorage.getItem(KEY_PENDING)) {
-          await retryPending();
-          if (localStorage.getItem(KEY_PENDING)) return;
-        }
-        finished = true; accumulated = 0;
-        localStorage.removeItem(KEY_ELAPSED); localStorage.removeItem(KEY_STARTED);
-        render(); status.textContent = "✓ Sessão finalizada. As pausas foram registradas.";
-      });
-
-      resetBtn.addEventListener("click", () => {
-        if (syncing || localStorage.getItem(KEY_PENDING)) {
-          status.textContent = "Há um lançamento pendente; não vou apagá-lo.";
-          return;
-        }
-        stopTicker(); accumulated=0; startedAt=null; running=false; finished=false;
-        localStorage.removeItem(KEY_ELAPSED); localStorage.removeItem(KEY_STARTED); render();
-      });
-
-      render();
-      if (running) startTicker();
-      if (localStorage.getItem(KEY_PENDING)) retryPending();
-      document.addEventListener("visibilitychange", render);
+      const W="https://cronometro-estudos-notion.nathanhelenogomes.workers.dev";
+      const $=id=>document.getElementById(id);
+      const display=$("display"),startBtn=$("start"),pauseBtn=$("pause"),finishBtn=$("finish"),resetBtn=$("reset"),status=$("status"),materia=$("materia"),aula=$("aula"),questoes=$("questoes"),erros=$("erros"),saveQ=$("saveQuestions");
+      const KE="cronometroEstudos.elapsed",KS="cronometroEstudos.startedAt",KP="cronometroEstudos.pendingPause";
+      let acc=Number(localStorage.getItem(KE)||0), st=localStorage.getItem(KS); let started=st?Number(st):null,running=started!==null,timer=null,sync=false;
+      const pad=n=>String(n).padStart(2,"0"); const elapsed=()=>acc+(running?Date.now()-started:0);
+      function fmt(ms){const s=Math.floor(Math.max(0,ms)/1000);return `${pad(Math.floor(s/3600))}:${pad(Math.floor((s%3600)/60))}:${pad(s%60)}`}
+      function save(){localStorage.setItem(KE,String(acc));running?localStorage.setItem(KS,String(started)):localStorage.removeItem(KS)}
+      function render(){display.textContent=fmt(elapsed());startBtn.disabled=running||sync;pauseBtn.disabled=!running||sync;finishBtn.disabled=sync||(!running&&acc<=0);startBtn.textContent=running?"▶ Em andamento":acc>0?"▶ Retomar":"▶ Iniciar"}
+      function tick(){clearInterval(timer);timer=setInterval(render,200)} function stop(){clearInterval(timer);timer=null}
+      async function post(body){const r=await fetch(W,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d?.notion?.message||d.error||"Erro desconhecido");return d}
+      async function loadAulas(){aula.disabled=true;aula.innerHTML='<option>Carregando...</option>';try{const r=await fetch(`${W}?action=aulas&materia=${encodeURIComponent(materia.value)}`),d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error);aula.innerHTML='<option value="">Selecione a aula</option>';d.aulas.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=x.nome;aula.appendChild(o)});if(!d.aulas.length)aula.innerHTML='<option value="">Nenhuma aula encontrada</option>'}catch(e){status.textContent=`✕ ${e.message}`}finally{aula.disabled=false}}
+      async function pending(){const raw=localStorage.getItem(KP);if(!raw||sync)return;const p=JSON.parse(raw);sync=true;render();try{await post({action:"pause",...p});localStorage.removeItem(KP);status.textContent=`✓ ${fmt(p.segundos*1000)} registrado em ${p.materia}.`}catch(e){status.textContent=`✕ ${e.message}. Lançamento pendente.`}finally{sync=false;render()}}
+      startBtn.onclick=async()=>{if(localStorage.getItem(KP)){await pending();if(localStorage.getItem(KP))return}started=Date.now();running=true;save();tick();render()};
+      pauseBtn.onclick=async()=>{const now=Date.now(),ms=now-started,s=Math.floor(ms/1000);acc+=ms;started=null;running=false;save();stop();render();if(s>0){localStorage.setItem(KP,JSON.stringify({materia:materia.value,segundos:s,eventId:crypto.randomUUID()}));await pending()}};
+      finishBtn.onclick=async()=>{if(running){await pauseBtn.onclick();if(localStorage.getItem(KP))return}acc=0;localStorage.removeItem(KE);localStorage.removeItem(KS);render();status.textContent="✓ Sessão finalizada."};
+      resetBtn.onclick=()=>{if(localStorage.getItem(KP)){status.textContent="Há lançamento pendente; não vou apagá-lo.";return}stop();acc=0;started=null;running=false;localStorage.removeItem(KE);localStorage.removeItem(KS);render()};
+      saveQ.onclick=async()=>{const q=Number(questoes.value),e=Number(erros.value);if(!aula.value)return status.textContent="Selecione uma aula.";if(!Number.isInteger(q)||q<=0)return status.textContent="Informe uma quantidade válida de questões.";if(!Number.isInteger(e)||e<0||e>q)return status.textContent="Erros deve ficar entre 0 e o total de questões.";saveQ.disabled=true;try{const d=await post({action:"saveQuestions",materia:materia.value,aulaId:aula.value,questoes:q,erros:e,eventId:crypto.randomUUID()});status.textContent=`✓ ${q} questões salvas. Aula: ${d.totalAula}. Matéria: ${d.totalMateria}.`}catch(x){status.textContent=`✕ ${x.message}`}finally{saveQ.disabled=false}};
+      materia.onchange=loadAulas;render();if(running)tick();if(localStorage.getItem(KP))pending();loadAulas();
     })();
   </script>
 </body>
